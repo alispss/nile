@@ -258,7 +258,7 @@ static void host_arm_net_receive_packet(struct host_arm_net_priv *priv,
 	
 	/* Set protocol and pass to network stack */
 	skb->protocol = eth_type_trans(skb, ndev);
-	skb->ip_summed = CHECKSUM_NONE;
+	skb->ip_summed = CHECKSUM_UNNECESSARY;
 	
 	netif_rx(skb);
 	
@@ -561,6 +561,11 @@ static int host_arm_net_probe(struct platform_device *pdev)
 	ndev->netdev_ops = &host_arm_net_netdev_ops;
 	ndev->mtu = ETH_DATA_LEN;
 	ndev->flags |= IFF_NOARP;
+
+	/* Disable all checksum offload features */
+	ndev->features = 0;
+	ndev->hw_features = 0;
+	ndev->vlan_features = 0;
 	
 	/* Generate random MAC address */
 	eth_random_addr(ndev->perm_addr);
