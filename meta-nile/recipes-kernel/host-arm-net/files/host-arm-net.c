@@ -104,6 +104,7 @@ struct host_arm_net_priv {
 	/* Ring indices */
 	u32 tx_head;
 	u32 tx_tail;
+	u32 tx_cleanup;  /* Last cleaned TX index */
 	u32 rx_head;
 	u32 rx_tail;
 	
@@ -281,6 +282,7 @@ static int host_arm_net_open(struct net_device *ndev)
 	/* Initialize ring buffer indices */
 	priv->tx_head = 0;
 	priv->tx_tail = 0;
+	priv->tx_cleanup = 0;
 	priv->rx_head = 0;
 	priv->rx_tail = 0;
 
@@ -411,15 +413,19 @@ static irqreturn_t host_arm_net_interrupt(int irq, void *dev_id)
 			priv->tx_head = host_arm_net_read_reg(priv, CTRL_TX_HEAD);
 			
 			/* Free completed SKBs */
-			while (priv->tx_tail != priv->tx_head) {
-				if (priv->tx_skb[priv->tx_tail]) {
-					dev_kfree_skb_irq(priv->tx_skb[priv->tx_tail]);
-					priv->tx_skb[priv->tx_tail] = NULL;
+			while (priv->tx_cleanup != priv->tx_head) {
+				if (priv->tx_skb[priv->tx_cleanup]) {
+					dev_kfree_skb_irq(priv->tx_skb[priv->tx_cleanup]);
+					priv->tx_skb[priv->tx_cleanup] = NULL;
 				}
-				priv->tx_tail = (priv->tx_tail + 1) % TX_RING_SIZE;
+				priv->tx_cleanup = (priv->tx_cleanup + 1) % TX_RING_SIZE;
 			}
 
-			netif_wake_queue(ndev);
+			/* Only wake if queue was actually stopped */
+			if (netif_queue_stopped(ndev)) {
+				netif_wake_queue(ndev);
+				dev_info(&ndev->dev, "TX Complete: Queue woken\n");
+			}
 		}
 		
 		if (mbox_status & XMB_IX_ERR) {
