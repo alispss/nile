@@ -338,6 +338,15 @@ static netdev_tx_t host_arm_net_start_xmit(struct sk_buff *skb, struct net_devic
 	/* Check if TX ring is full */
 	next_tail = (priv->tx_tail + 1) % TX_RING_SIZE;
 	if (next_tail == priv->tx_head) {
+		dev_warn(&ndev->dev, "TX: Ring full, stopping queue\n");
+		netif_stop_queue(ndev);
+		spin_unlock_irqrestore(&priv->lock, flags);
+		return NETDEV_TX_BUSY;
+	}
+
+	/* Check if mailbox is full */
+	if (mbox_is_full(priv)) {
+		dev_warn(&ndev->dev, "TX: Mailbox full, stopping queue\n");
 		netif_stop_queue(ndev);
 		spin_unlock_irqrestore(&priv->lock, flags);
 		return NETDEV_TX_BUSY;
@@ -355,11 +364,9 @@ static netdev_tx_t host_arm_net_start_xmit(struct sk_buff *skb, struct net_devic
 	priv->tx_tail = next_tail;
 	host_arm_net_update_tx_tail(priv);
 	
-	/* Notify remote processor via mailbox if not full */
-	if (!mbox_is_full(priv)) {
-		u32 msg = MBOX_MSG_PACK(skb->len, tx_index);
-		mbox_write_data(priv, msg);
-	}
+	/* Notify remote processor via mailbox */
+	u32 msg = MBOX_MSG_PACK(skb->len, tx_index);
+	mbox_write_data(priv, msg);
 	
 	u32 txhead = host_arm_net_read_reg(priv, CTRL_TX_HEAD);
 	u32 txtail = host_arm_net_read_reg(priv, CTRL_TX_TAIL);
